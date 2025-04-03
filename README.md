@@ -64,3 +64,4 @@ A real-time chat application built with Node.js, featuring user authentication, 
 - Message history and persistence
 - Input validation and error handling
 - Rate limiting to prevent abuse
+# Muhammadaziz-Ekubov
