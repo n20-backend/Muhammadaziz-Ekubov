@@ -3,6 +3,7 @@ import errorHandler from "../utils/errorHandler.js";
 import logger from "../utils/logger.js";
 import { hashPassword, comparePassword } from "../utils/crypto.js";
 import { tokenService } from "./token.service.js";
+import { validateEmail } from "../utils/validator.js"
 
 
 export const authService = {
@@ -59,6 +60,10 @@ export const authService = {
 
             if (!email || !password) {
                 throw errorHandler.badRequest("All fields are required");
+            }
+
+            if(!validateEmail(email)) {
+                throw errorHandler.badRequest("Email not correct!")
             }
 
             const user = await db.User.findOne({where: {email}});

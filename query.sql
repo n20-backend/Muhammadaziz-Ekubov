@@ -1,45 +1,62 @@
--- Chat Application Database Schema
-
--- Table: Users
-CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY,
+-- User Model
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
-    username VARCHAR(50) UNIQUE NOT NULL,
+    username VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
     role VARCHAR(20) CHECK (role IN ('user', 'admin', 'moderator')) NOT NULL,
     status VARCHAR(20) CHECK (status IN ('active', 'inactive')) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    updatedAt TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Table: Chats
-CREATE TABLE IF NOT EXISTS chats (
-    id UUID PRIMARY KEY,
+-- Chat Model
+CREATE TABLE chats (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type VARCHAR(20) CHECK (type IN ('private', 'group')) NOT NULL,
-    name VARCHAR(100),
-    owner_id UUID REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    name VARCHAR(255), -- Only for group chats
+    ownerId UUID, -- Only for group chats
+    participants UUID[] NOT NULL,
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    updatedAt TIMESTAMPTZ DEFAULT NOW(),
+    FOREIGN KEY (ownerId) REFERENCES users(id) ON DELETE SET NULL
 );
 
--- Table: Participants
-CREATE TABLE IF NOT EXISTS participants (
-    id UUID PRIMARY KEY,
-    chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Table: Messages
-CREATE TABLE IF NOT EXISTS messages (
-    id UUID PRIMARY KEY,
-    chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
-    sender_id UUID REFERENCES users(id),
+-- Message Model
+CREATE TABLE messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chatId UUID NOT NULL,
+    senderId UUID NOT NULL,
     content TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    type VARCHAR(20) CHECK (type IN ('text', 'image', 'file')) NOT NULL,
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    updatedAt TIMESTAMPTZ DEFAULT NOW(),
+    FOREIGN KEY (chatId) REFERENCES chats(id) ON DELETE CASCADE,
+    FOREIGN KEY (senderId) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Indexes for faster querying
-CREATE INDEX idx_messages_chat_id ON messages(chat_id);
-CREATE INDEX idx_participants_chat_id ON participants(chat_id);
-CREATE INDEX idx_participants_user_id ON participants(user_id);
+-- Call Model
+CREATE TABLE calls (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chatId UUID NOT NULL,
+    callerId UUID NOT NULL,
+    receiverId UUID NOT NULL,
+    startTime TIMESTAMPTZ NOT NULL,
+    endTime TIMESTAMPTZ,
+    status VARCHAR(20) CHECK (status IN ('ongoing', 'missed', 'ended')) NOT NULL,
+    FOREIGN KEY (chatId) REFERENCES chats(id) ON DELETE CASCADE,
+    FOREIGN KEY (callerId) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (receiverId) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- User Profile Model
+CREATE TABLE user_profiles (
+    userId UUID PRIMARY KEY,
+    firstName VARCHAR(255) NOT NULL,
+    lastName VARCHAR(255) NOT NULL,
+    avatarUrl VARCHAR(255),
+    statusMessage TEXT,
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    updatedAt TIMESTAMPTZ DEFAULT NOW(),
+    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+);
