@@ -1,50 +1,73 @@
 import logger from './logger.js';
 
-// Error handling utilities
-const badRequest = (message = 'Bad Request') => ({ statusCode: 400, message });
-const unauthorized = (message = 'Unauthorized') => ({ statusCode: 401, message });
-const forbidden = (message = 'Forbidden') => ({ statusCode: 403, message });
-const notFound = (message = 'Not Found') => ({ statusCode: 404, message });
-const conflict = (message = 'Conflict') => ({ statusCode: 409, message });
-const internalServerError = (message = 'Internal Server Error') => ({ statusCode: 500, message });
+class ApiError extends Error {
+  constructor(message, statusCode) {
+    super(message);
+    this.statusCode = statusCode;
+    this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
+    this.isOperational = true;
 
-// Centralized error handling middleware
-const errorHandler = (err, req, res, next) => {
-  if (!err.statusCode) {
-    // Unexpected error
-    logger.error(`Unexpected Error: ${err.message}`, { 
-      stack: err.stack,
-      url: req.originalUrl,
-      method: req.method,
-      body: req.body
-    });
-
-    return res.status(500).json({
-      status: 'error',
-      message: 'Something went wrong!',
-    });
+    Error.captureStackTrace(this, this.constructor);
   }
+}
 
-  // Log operational errors
-  logger.warn(`Operational Error: ${err.message}`, { 
-    url: req.originalUrl,
-    method: req.method,
-    statusCode: err.statusCode
-  });
-
-  res.status(err.statusCode).json({
-    status: 'fail',
-    message: err.message,
-  });
+const errorHandler = {
+  badRequest: (msg) => new ApiError(msg || 'Bad request', 400),
+  unauthorized: (msg) => new ApiError(msg || 'Unauthorized', 401),
+  forbidden: (msg) => new ApiError(msg || 'Forbidden', 403),
+  notFound: (msg) => new ApiError(msg || 'Not found', 404),
+  conflict: (msg) => new ApiError(msg || 'Conflict', 409),
+  internal: (msg) => new ApiError(msg || 'Internal server error', 500)
 };
 
-// Exporting all utilities
-export default {
-    badRequest,
-    unauthorized,
-    forbidden,
-    notFound,
-    conflict,
-    internalServerError,
-    errorHandler
-}
+export const errorMiddleware = (err, req, res, next) => {
+  err.statusCode = err.statusCode || 500;
+  err.status = err.status || 'error';
+
+  if (process.env.NODE_ENV === 'development') {
+    logger.error('Error', {
+      message: err.message,
+      statusCode: err.statusCode,
+      stack: err.stack
+    });
+
+    res.status(err.statusCode).json({
+      status: err.status,
+      message: err.message,
+      stack: err.stack,
+      error: err
+    });
+  } else {
+    // Production
+    // Don't expose error details
+    let error = { ...err };
+    error.message = err.message;
+    error.stack = err.stack;
+
+    // Provide specific messages for certain error types
+    if (error.code === '23505') {
+      error = errorHandler.conflict('Record already exists');
+    }
+    
+    if (error.code === '22P02') {
+      error = errorHandler.badRequest('Invalid input data');
+    }
+    
+    if (error.code === '23503') {
+      error = errorHandler.badRequest('Related record not found');
+    }
+
+    logger.error('Error', {
+      message: error.message,
+      statusCode: error.statusCode || 500,
+      stack: error.stack
+    });
+
+    res.status(error.statusCode || 500).json({
+      status: error.status || 'error',
+      message: error.isOperational ? error.message : 'Something went wrong'
+    });
+  }
+};
+
+export default errorHandler;

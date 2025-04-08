@@ -1,6 +1,5 @@
-import { log } from 'console';
-import logger from '../utils/logger.js';
 import pg from "pg"
+import logger from '../utils/logger.js';
 
 const { Pool } = pg
 
@@ -19,3 +18,5 @@ pool.on("error", (err) => {
     logger.error("Unexpected error on idle client", err)
     process.exit(-1)
 });
+
+export default pool;
