@@ -19,7 +19,7 @@ export const authService = {
                 throw errorHandler.badRequest("All fields are required");
             }
 
-            
+
             const existingUserQuery = `
                 SELECT * FROM users 
                 WHERE email = $1 OR username = $2
