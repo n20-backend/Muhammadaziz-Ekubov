@@ -1,3 +1,3 @@
-import logger from "../config/winston.js";
+import { logger } from "../config/index.js";
 
 export default logger;

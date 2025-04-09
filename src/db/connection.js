@@ -16,7 +16,7 @@ const pool = new Pool({
 logger.info("Connected to database")
 pool.on("error", (err) => {
     logger.error("Unexpected error on idle client", err)
-    process.exit(-1)
+    process.exit(1)
 });
 
 export default pool;

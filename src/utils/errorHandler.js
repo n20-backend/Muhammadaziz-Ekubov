@@ -38,13 +38,10 @@ export const errorMiddleware = (err, req, res, next) => {
       error: err
     });
   } else {
-    // Production
-    // Don't expose error details
     let error = { ...err };
     error.message = err.message;
     error.stack = err.stack;
 
-    // Provide specific messages for certain error types
     if (error.code === '23505') {
       error = errorHandler.conflict('Record already exists');
     }

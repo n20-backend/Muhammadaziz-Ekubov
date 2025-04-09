@@ -5,10 +5,7 @@ import logger from "../utils/logger.js";
 import tokenService  from "./token.service.js";
 import db from "../db/connection.js";
 import jwtConfig from "../config/jwt.js";
-// import { sendEmail } from "../config/email.js";
-// import { sendOTPByEmail } from "./otp.service.js";
-
-
+import { authQueries } from "../utils/queries.js";
 
 export const authService = {
     Register: async (userData) => {
@@ -19,35 +16,23 @@ export const authService = {
                 throw errorHandler.badRequest("All fields are required");
             }
 
+            const existingUserResult = await db.query(authQueries.checkExistingUser, [user.email, user.username]);
             
-            const existingUserQuery = `
-                SELECT * FROM users 
-                WHERE email = $1 OR username = $2
-                LIMIT 1
-                `;
-                const existingUserResult = await db.query(existingUserQuery, [user.email, user.username]);
-                
-                if (existingUserResult.rows.length > 0) {
-                    throw errorHandler.conflict("User already exists");
-                }
-                
-                if (user.password !== user.confirmPassword) {
-                    throw errorHandler.badRequest("Password and confirm password do not match");
-                }
+            if (existingUserResult.rows.length > 0) {
+                throw errorHandler.conflict("User already exists");
+            }
+            
+            if (user.password !== user.confirmPassword) {
+                throw errorHandler.badRequest("Password and confirm password do not match");
+            }
 
             logger.info("Registering new user:", {data: userData});
 
             const hashedPassword = await hashPassword(user.password);
 
-            const insertUserQuery = `
-                INSERT INTO users (email, username, password)
-                VALUES ($1, $2, $3)
-                RETURNING id, email
-            `;
-            const newUserResult = await db.query(insertUserQuery, [user.email, user.username, hashedPassword]);
+            const newUserResult = await db.query(authQueries.insertUser, [user.email, user.username, hashedPassword]);
             
-        
-            // await sendOTPByEmail(newUserResult.rows[0].id, newUserResult.rows[0].email); 
+            await sendOTPByEmail(newUserResult.rows[0].id, newUserResult.rows[0].email); 
             
             logger.info("User registered successfully:", {data: newUserResult.rows[0]});
 
@@ -73,12 +58,7 @@ export const authService = {
                 throw errorHandler.badRequest("Email not correct!");
             }
 
-            const userQuery = `
-                SELECT * FROM users 
-                WHERE email = $1
-                LIMIT 1
-            `;
-            const userResult = await db.query(userQuery, [existUser.email]);
+            const userResult = await db.query(authQueries.getUserByEmail, [existUser.email]);
             
             if (userResult.rows.length === 0) {
                 throw errorHandler.unauthorized("Invalid credentials");
@@ -93,7 +73,6 @@ export const authService = {
 
             const token = tokenService.generateToken(user.id, user.username, user.email);
             const refreshToken = tokenService.generateRefreshToken(user.id, user.username, user.email);
-
 
             return {
                 accessToken: token,
@@ -114,12 +93,7 @@ export const authService = {
             
             const decoded = tokenService.verifyRefreshToken(refreshToken);
             
-            const userQuery = `
-                SELECT * FROM users 
-                WHERE id = $1
-                LIMIT 1
-            `;
-            const userResult = await db.query(userQuery, [decoded.userId]);
+            const userResult = await db.query(authQueries.getUserById, [decoded.userId]);
             
             if (userResult.rows.length === 0) {
                 throw errorHandler.notFound("User not found");
@@ -136,13 +110,8 @@ export const authService = {
         try {
             const decoded = tokenService.verifyRefreshToken(refreshToken);
             
-            const userQuery = `
-                SELECT * FROM users 
-                WHERE id = $1
-                LIMIT 1
-            `;
             logger.info("Decoded refresh token:", { decoded: decoded });
-            const userResult = await db.query(userQuery, [decoded.id]);
+            const userResult = await db.query(authQueries.getUserById, [decoded.id]);
             
             if (userResult.rows.length === 0) {
                 throw errorHandler.notFound("User not found");
@@ -163,15 +132,7 @@ export const authService = {
                 throw errorHandler.badRequest("User ID is required");
             }
             
-            const userQuery = `
-                SELECT u.id, u.email, u.username, u.role, u.status, u.created_at as "createdAt", u.updated_at as "updatedAt",
-                       up.first_name as "firstName", up.last_name as "lastName", up.avatar_url as "avatarUrl", up.status_message as "statusMessage"
-                FROM users u
-                LEFT JOIN user_profiles up ON u.id = up.user_id
-                WHERE u.id = $1
-                LIMIT 1
-            `;
-            const userResult = await db.query(userQuery, [userId]);
+            const userResult = await db.query(authQueries.getCurrentUser, [userId]);
             
             if (userResult.rows.length === 0) {
                 throw errorHandler.notFound("User not found");

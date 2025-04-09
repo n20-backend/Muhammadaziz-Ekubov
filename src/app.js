@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import routes from './routes/main.routes.js';
+import * as routes from './routes/index.js';
 import logger from './utils/logger.js';
 import { errorMiddleware } from './utils/errorHandler.js';
 
@@ -16,7 +16,11 @@ app.use(cookieParser());
 app.use(cors({ origin: '*', credentials: true }));
 
 // API routes
-app.use('/api', routes);
+app.use('/api/auth', routes.authRoutes);
+app.use('/api/calls', routes.callsRoutes);
+app.use('/api/profiles', routes.profilesRoutes);
+app.use('/api/messages', routes.messagesRoutes);
+app.use('/api/chats', routes.chatsRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

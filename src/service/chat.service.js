@@ -1,6 +1,7 @@
 import db from "../db/connection.js";
 import logger from "../utils/logger.js";
 import errorHandler from "../utils/errorHandler.js";
+import { chatQueries } from "../utils/queries.js";
 
 const chatService = {
     createChat: async (userId, chatData) => {
@@ -24,43 +25,23 @@ const chatService = {
                 throw errorHandler.badRequest("Group chat must have a name");
             }
 
-            // Ensure the current user is included in participants
-            if (!chatData.participants.includes(userId)) {
-                chatData.participants.push(userId);
-            }
-
-            // Check if a private chat already exists between these users
-            if (chatData.type === 'private') {
-                const checkQuery = `
-                    SELECT * FROM chats
-                    WHERE type = 'private'
-                    AND participants @> $1::UUID[]
-                    AND array_length(participants, 1) = 2
-                `;
-                const checkResult = await db.query(checkQuery, [chatData.participants]);
-                
-                if (checkResult.rows.length > 0) {
-                    return {
-                        id: checkResult.rows[0].id,
-                        message: "Chat already exists"
-                    };
-                }
-            }
-
             // Create the chat
-            const query = `
-                INSERT INTO chats (type, name, owner_id, participants)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, type, name, owner_id, participants, created_at, updated_at
-            `;
-            const result = await db.query(query, [
-                chatData.type,
+            const result = await db.query(chatQueries.createChat, [
                 chatData.name || null,
-                chatData.type === 'group' ? userId : null,
-                chatData.participants
+                chatData.type,
+                userId
             ]);
 
             const newChat = result.rows[0];
+
+            // Add all participants
+            for (const participantId of chatData.participants) {
+                await db.query(chatQueries.addChatMember, [
+                    newChat.id,
+                    participantId,
+                    participantId === userId ? 'owner' : 'member'
+                ]);
+            }
 
             logger.info("Chat created successfully", { chatId: newChat.id });
             
@@ -76,14 +57,7 @@ const chatService = {
 
     getAllChats: async (userId) => {
         try {
-            const query = `
-                SELECT c.id, c.type, c.name, c.owner_id as "ownerId", c.participants,
-                       c.created_at as "createdAt", c.updated_at as "updatedAt"
-                FROM chats c
-                WHERE c.participants @> ARRAY[$1]::UUID[]
-                ORDER BY c.updated_at DESC
-            `;
-            const result = await db.query(query, [userId]);
+            const result = await db.query(chatQueries.getUserChats, [userId]);
             
             logger.info("Retrieved all chats for user", { userId, count: result.rows.length });
             return result.rows;
@@ -95,22 +69,24 @@ const chatService = {
 
     getChatById: async (chatId, userId) => {
         try {
-            const query = `
-                SELECT c.id, c.type, c.name, c.owner_id as "ownerId", c.participants,
-                       c.created_at as "createdAt", c.updated_at as "updatedAt"
-                FROM chats c
-                WHERE c.id = $1
-                AND c.participants @> ARRAY[$2]::UUID[]
-                LIMIT 1
-            `;
-            const result = await db.query(query, [chatId, userId]);
+            const result = await db.query(chatQueries.getChatMembers, [chatId]);
             
             if (result.rows.length === 0) {
-                throw errorHandler.notFound("Chat not found or you don't have access to it");
+                throw errorHandler.notFound("Chat not found");
+            }
+
+            const isMember = result.rows.some(member => member.user_id === userId);
+            if (!isMember) {
+                throw errorHandler.forbidden("You don't have access to this chat");
             }
             
             logger.info("Chat retrieved successfully", { chatId });
-            return result.rows[0];
+            return {
+                id: chatId,
+                members: result.rows,
+                type: result.rows[0].chat_type,
+                name: result.rows[0].chat_name
+            };
         } catch (error) {
             logger.error("Error getting chat by ID:", { error: error.message, chatId });
             throw error;
@@ -119,82 +95,50 @@ const chatService = {
 
     updateChat: async (chatId, userId, chatData) => {
         try {
-            // Get current chat data
-            const getChatQuery = `
-                SELECT * FROM chats
-                WHERE id = $1
-                LIMIT 1
-            `;
-            const chatResult = await db.query(getChatQuery, [chatId]);
+            // Get current chat members
+            const membersResult = await db.query(chatQueries.getChatMembers, [chatId]);
             
-            if (chatResult.rows.length === 0) {
+            if (membersResult.rows.length === 0) {
                 throw errorHandler.notFound("Chat not found");
             }
             
-            const chat = chatResult.rows[0];
-            
-            // Check if user is a participant in the chat
-            if (!chat.participants.includes(userId)) {
+            const userMember = membersResult.rows.find(member => member.user_id === userId);
+            if (!userMember) {
                 throw errorHandler.forbidden("You are not a participant in this chat");
             }
             
-            // For group chats, only owner can update
-            if (chat.type === 'group' && chat.owner_id !== userId) {
-                throw errorHandler.forbidden("Only the owner can update a group chat");
-            }
-            
-            // For private chats, only participants can update and only certain fields
-            if (chat.type === 'private' && chatData.name) {
-                throw errorHandler.badRequest("Cannot change name of a private chat");
+            // Only owner can update chat name
+            if (userMember.role !== 'owner' && chatData.name) {
+                throw errorHandler.forbidden("Only the owner can update chat name");
             }
 
-            // Update chat
-            let updateQuery = 'UPDATE chats SET ';
-            const queryParams = [];
-            let paramCounter = 1;
-            
-            const updateFields = [];
-            
-            if (chatData.name && chatData.name.trim() !== '' && chat.type === 'group') {
-                updateFields.push(`name = $${paramCounter++}`);
-                queryParams.push(chatData.name);
+            // Update chat name if provided
+            if (chatData.name && chatData.name.trim() !== '') {
+                await db.query(chatQueries.updateChat, [chatId, chatData.name]);
             }
-            
-            if (chatData.participants && Array.isArray(chatData.participants) && chatData.participants.length > 0) {
-                // Ensure owner is always a participant in group chat
-                if (chat.type === 'group' && !chatData.participants.includes(chat.owner_id)) {
-                    chatData.participants.push(chat.owner_id);
+
+            // Update members if provided
+            if (chatData.participants && Array.isArray(chatData.participants)) {
+                const currentMembers = membersResult.rows.map(m => m.user_id);
+                const newMembers = chatData.participants.filter(id => !currentMembers.includes(id));
+                const removedMembers = currentMembers.filter(id => !chatData.participants.includes(id));
+
+                // Add new members
+                for (const memberId of newMembers) {
+                    await db.query(chatQueries.addChatMember, [chatId, memberId, 'member']);
                 }
-                
-                // For private chat, ensure there are exactly 2 participants
-                if (chat.type === 'private' && chatData.participants.length !== 2) {
-                    throw errorHandler.badRequest("Private chat must have exactly 2 participants");
+
+                // Remove members
+                for (const memberId of removedMembers) {
+                    if (userMember.role === 'owner' || memberId === userId) {
+                        await db.query(chatQueries.deleteChatMember, [chatId, memberId]);
+                    }
                 }
-                
-                updateFields.push(`participants = $${paramCounter++}`);
-                queryParams.push(chatData.participants);
             }
-            
-            updateFields.push(`updated_at = NOW()`);
-            
-            if (updateFields.length === 1) {
-                return {
-                    chatId: chat.id,
-                    message: "No changes made"
-                };
-            }
-            
-            updateQuery += updateFields.join(', ');
-            updateQuery += ` WHERE id = $${paramCounter} RETURNING id, type, name, owner_id, participants, created_at, updated_at`;
-            queryParams.push(chatId);
-            
-            const result = await db.query(updateQuery, queryParams);
-            
-            const updatedChat = result.rows[0];
 
             logger.info("Chat updated successfully", { chatId });
             return {
-                chatId: updatedChat.id,
+                chatId: chatId,
                 message: "Chat updated"
             };
         } catch (error) {
@@ -205,50 +149,33 @@ const chatService = {
 
     deleteChat: async (chatId, userId) => {
         try {
-            // Get current chat data
-            const getChatQuery = `
-                SELECT * FROM chats
-                WHERE id = $1
-                LIMIT 1
-            `;
-            const chatResult = await db.query(getChatQuery, [chatId]);
+            // Get current chat members
+            const membersResult = await db.query(chatQueries.getChatMembers, [chatId]);
             
-            if (chatResult.rows.length === 0) {
+            if (membersResult.rows.length === 0) {
                 throw errorHandler.notFound("Chat not found");
             }
             
-            const chat = chatResult.rows[0];
-            
-            // Check if user is a participant in the chat
-            if (!chat.participants.includes(userId)) {
+            const userMember = membersResult.rows.find(member => member.user_id === userId);
+            if (!userMember) {
                 throw errorHandler.forbidden("You are not a participant in this chat");
             }
             
-            // For group chats, only owner or admin can delete
-            if (chat.type === 'group' && chat.owner_id !== userId) {
-                // Check if user is admin
-                const userQuery = `
-                    SELECT role FROM users
-                    WHERE id = $1
-                    LIMIT 1
-                `;
-                const userResult = await db.query(userQuery, [userId]);
-                
-                if (userResult.rows.length === 0 || userResult.rows[0].role !== 'admin') {
-                    throw errorHandler.forbidden("Only the owner or an admin can delete a group chat");
-                }
+            // Only owner can delete chat
+            if (userMember.role !== 'owner') {
+                throw errorHandler.forbidden("Only the owner can delete the chat");
             }
             
-            // Delete chat
-            const deleteQuery = `
-                DELETE FROM chats
-                WHERE id = $1
-                RETURNING id
-            `;
-            await db.query(deleteQuery, [chatId]);
+            // Delete all members first
+            for (const member of membersResult.rows) {
+                await db.query(chatQueries.deleteChatMember, [chatId, member.user_id]);
+            }
             
             logger.info("Chat deleted successfully", { chatId });
-            return { message: "Chat deleted" };
+            return {
+                chatId: chatId,
+                message: "Chat deleted successfully"
+            };
         } catch (error) {
             logger.error("Error deleting chat:", { error: error.message, chatId });
             throw error;
