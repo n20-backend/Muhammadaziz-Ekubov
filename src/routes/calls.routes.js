@@ -1,6 +1,6 @@
 import express from 'express';
-import { callController } from '../controller/index';
-import { isAuthenticated } from '../middleware/auth.middleware';
+import { callController } from '../controller/index.js';
+import { isAuthenticated } from '../middleware/auth.middleware.js';
 
 const router = express.Router("/calls");
 

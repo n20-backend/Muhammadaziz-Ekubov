@@ -1,6 +1,6 @@
 import express from 'express';
-import { profileController } from '../controller/index';
-import { isAuthenticated, authorize } from '../middleware/auth.middleware';
+import { profileController } from '../controller/index.js';
+import { isAuthenticated, authorize } from '../middleware/auth.middleware.js';
 
 const router = express.Router("/profiles");
 
