@@ -2,7 +2,7 @@ import express from 'express';
 import { authController } from '../controller/index.js';
 import { isAuthenticated } from '../middleware/auth.middleware.js';
 
-const router = express.Router("/auth");
+const router = express.Router();
 
 // Auth routes
 router.post('/register', authController.register);

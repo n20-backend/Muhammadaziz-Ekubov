@@ -1,5 +1,13 @@
-export * as authRoutes from './auth.routes.js';
-export * as callsRoutes from './calls.routes.js';
-export * as profilesRoutes from './profile.routes.js';
-export * as messagesRoutes from './messages.routes.js';
-export * as chatsRoutes from './chats.routes.js';
+import authRoutes from './auth.routes.js';
+import callsRoutes from './calls.routes.js';
+import profilesRoutes from './profile.routes.js';
+import messagesRoutes from './messages.routes.js';
+import chatsRoutes from './chats.routes.js';
+
+export {
+    authRoutes,
+    callsRoutes,
+    profilesRoutes,
+    messagesRoutes,
+    chatsRoutes
+};

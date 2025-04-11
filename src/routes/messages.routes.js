@@ -2,7 +2,7 @@ import express from 'express';
 import { messageController } from '../controller/index.js';
 import { isAuthenticated } from '../middleware/auth.middleware.js';
 
-const router = express.Router("/messages");
+const router = express.Router();
 
 // Message routes
 router.post('/', isAuthenticated, messageController.sendMessage);

@@ -1,5 +1,5 @@
 import db from "../db/connection.js";
-import logger  from "../utils/logger.js";
+import logger from "../utils/logger.js";
 import errorHandler from "../utils/errorHandler.js";
 import { messageQueries, chatQueries } from "../utils/queries.js";
 

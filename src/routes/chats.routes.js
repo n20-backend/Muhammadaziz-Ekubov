@@ -2,7 +2,7 @@ import express from 'express';
 import { chatController } from '../controller/index.js';
 import { isAuthenticated } from '../middleware/auth.middleware.js';
 
-const router = express.Router("/chats");
+const router = express.Router();
 
 // Chat routes
 router.post('/', isAuthenticated, chatController.createChat);
