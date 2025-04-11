@@ -7,7 +7,7 @@ import { errorMiddleware } from './utils/errorHandler.js';
 
 const app = express();
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 50500;
 
 // Middleware
 app.use(express.json()); 
